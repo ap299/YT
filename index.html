@@ -1,16 +1,140 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width">
-  <title>replit</title>
-  <link href="style.css" rel="stylesheet" type="text/css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Comment Picker</title>
+  <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; text-align: center; background: #e0e0e0; color: #333; padding: 20px; }
+      .container { max-width: 600px; margin: auto; padding: 20px; background: #ffffff; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+      input { width: 90%; padding: 12px; margin: 10px 0; border-radius: 10px; border: 1px solid #bbb; font-size: 16px; background: #f0f0f0; color: #333; }
+      button { width: 90%; padding: 12px; margin: 10px 0; border-radius: 10px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; background: #757575; color: white; transition: 0.3s; }
+      button:hover { background: #5e5e5e; }
+      #comments { max-height: 300px; overflow-y: auto; text-align: left; border: 1px solid #ddd; padding: 10px; background: #f5f5f5; border-radius: 10px; }
+      .comment { padding: 10px; border-bottom: 1px solid #ddd; font-size: 14px; line-height: 1.6; }
+      .winner-box { margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 10px; text-align: left; position: relative; overflow: hidden; }
+      .winner { padding: 10px; border-bottom: 1px solid #ddd; font-size: 14px; line-height: 1.6; display: flex; gap: 5px; align-items: center; }
+      .winner strong { font-weight: bold; color: black; font-size: 14px; }
+      .winner span { color: black; font-size: 14px; }
+      .winner span:before { content: ":"; padding-left: 5px; font-weight: normal; }
+      h2, h3 { color: #333; font-weight: 600; }
+      .winner-header { font-size: 22px; font-weight: bold; margin-top: 20px; color: #000; }
+      label { font-weight: bold; display: block; text-align: left; margin-top: 10px; }
+  </style>
+
+
+
+
+
 </head>
-
 <body>
-  Hello world
-  <script src="script.js"></script>
-</body>
+    <div class="container">
+        <h2>YouTube Comment Picker</h2>
+        <label for="videoUrl">YouTube Video URL:</label>
+        <input type="text" id="videoUrl" placeholder="Enter YouTube Video URL">
 
+        <label for="fetchLimit">Number of last comments:</label>
+        <input type="number" id="fetchLimit" placeholder="Number of last comments" value="1000" min="1">
+
+        <button onclick="fetchComments()">Fetch Comments</button>
+
+        <h3>Comments:</h3>
+        <div id="comments"></div>
+
+        <label for="pickCount">How many winners?</label>
+        <input type="number" id="pickCount" placeholder="How many winners?" value="1" min="1">
+
+        <button onclick="pickWinners()">Pick Random Comment(s)</button>
+
+        <div class="winner-header">Winners</div>
+        <div id="winnerBox" class="winner-box"></div>
+    </div>
+    
+    <script>
+        const API_KEY = 'AIzaSyBgCw1l8MA12Jn1lxQYfB4bBwGl84lqSmg';
+        let liveChatId = null;
+        let commentsData = [];
+
+        function extractVideoId(url) {
+            const match = url.match(/(?:v=|youtu\.be\/|\/embed\/|\/v\/|\/e\/|watch\?v=)([^#&?]*)/);
+            return match ? match[1] : null;
+        }
+
+        async function fetchComments() {
+            const videoUrl = document.getElementById("videoUrl").value;
+            const fetchLimit = document.getElementById("fetchLimit").value || 1000;
+            const videoId = extractVideoId(videoUrl);
+            if (!videoId) return alert("Invalid YouTube URL");
+
+            liveChatId = await getLiveChatId(videoId);
+            if (liveChatId) {
+                autoFetchComments();
+            } else {
+                fetchNormalComments(videoId, fetchLimit);
+            }
+        }
+
+        async function getLiveChatId(videoId) {
+            const url = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=liveStreamingDetails&key=${API_KEY}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            return data.items[0]?.liveStreamingDetails?.activeLiveChatId || null;
+        }
+
+        async function fetchNormalComments(videoId, maxResults) {
+            let url = `https://www.googleapis.com/youtube/v3/commentThreads?videoId=${videoId}&part=snippet&maxResults=${maxResults}&key=${API_KEY}`;
+            let response = await fetch(url);
+            let data = await response.json();
+            
+            commentsData = data.items.map(item => ({
+                author: item.snippet.topLevelComment.snippet.authorDisplayName,
+                text: item.snippet.topLevelComment.snippet.textDisplay
+            }));
+            displayComments();
+        }
+
+        async function autoFetchComments() {
+            if (!liveChatId) return;
+            let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&key=${API_KEY}`;
+            let response = await fetch(url);
+            let data = await response.json();
+            
+            data.items.forEach(item => {
+                commentsData.push({
+                    author: item.authorDetails.displayName,
+                    text: item.snippet.displayMessage
+                });
+            });
+            displayComments();
+            setTimeout(autoFetchComments, 1000);
+        }
+
+        function displayComments() {
+            let commentsDiv = document.getElementById("comments");
+            commentsDiv.innerHTML = commentsData.map(comment => `<div class="comment"><strong>${comment.author}</strong>: ${comment.text}</div>`).join('');
+        }
+
+      function pickWinners() {
+          let pickCount = parseInt(document.getElementById("pickCount").value) || 1;
+          let uniqueUsers = [...new Set(commentsData.map(c => c.author))];
+          if (pickCount > uniqueUsers.length) return alert("Not enough unique users!");
+
+          let winners = [];
+          let usedIndexes = new Set();
+          while (winners.length < pickCount) {
+              let randomIndex = Math.floor(Math.random() * commentsData.length);
+              if (!usedIndexes.has(randomIndex)) {
+                  usedIndexes.add(randomIndex);
+                  winners.push(commentsData[randomIndex]);
+              }
+          }
+
+          document.getElementById("winnerBox").innerHTML = winners.map(winner => 
+              `<div class="winner">
+                  <strong>${winner.author}</strong>
+                  <span>${winner.text}</span>
+              </div>`).join('');
+      }
+    </script>
+</body>
 </html>
